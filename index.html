@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alphabet Lock Wordle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #4c1d95 100%);
+        }
+        .tile {
+            width: 62px;
+            height: 62px;
+            font-size: 2.25rem;
+            font-weight: 700;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            transition: all 0.4s ease;
+            transform-style: preserve-3d;
+            background-color: rgba(0, 0, 0, 0.2);
+            color: white;
+        }
+        .tile.flip {
+            transform: rotateX(180deg);
+        }
+        .tile-front, .tile-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 6px;
+        }
+        .tile-back {
+            transform: rotateX(180deg);
+        }
+        .key {
+            transition: all 0.2s ease;
+            border-radius: 6px;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-weight: 600;
+        }
+        .key:disabled {
+            background-color: rgba(0,0,0,0.4) !important;
+            color: rgba(255,255,255,0.3) !important;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        .key:active:not(:disabled) {
+            transform: scale(0.95);
+        }
+        .alphabet-letter {
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .alphabet-letter.used-all {
+            opacity: 0.2;
+        }
+        .alphabet-letter sup {
+            font-size: 0.7em;
+            position: absolute;
+            top: 0;
+            right: -2px;
+            color: #a78bfa; /* violet-400 */
+            opacity: 1;
+            transition: opacity 0.3s;
+        }
+        .alphabet-letter.used-all sup {
+            opacity: 0;
+        }
+        .spinner {
+            border-top-color: #a78bfa;
+            width: 64px;
+            height: 64px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="text-white flex flex-col items-center justify-center min-h-screen p-2 sm:p-4">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-70 flex-col items-center justify-center hidden z-50">
+        <div class="spinner border-4 border-solid border-gray-600 rounded-full"></div>
+        <p id="loading-text" class="mt-4 text-lg font-semibold">Initializing AI...</p>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="text-center">
+        <h1 class="text-5xl md:text-6xl font-bold tracking-tight">Alphabet Lock</h1>
+        <p class="text-xl text-white/80 mt-2 mb-8">You can use each letter up to three times.</p>
+        <button id="start-button" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-10 rounded-lg text-2xl transition-transform transform hover:scale-105">
+            Start Game
+        </button>
+    </div>
+
+    <!-- Main Game Content -->
+    <div id="game-container" class="hidden flex-col w-full max-w-2xl mx-auto">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-4 px-2">
+             <h1 class="text-2xl sm:text-3xl font-bold">Alphabet Lock</h1>
+             <button id="restart-button-main" class="bg-violet-500 hover:bg-violet-600 text-white font-bold py-2 px-4 rounded-lg text-sm transition-transform transform hover:scale-105">
+                Restart
+            </button>
+        </div>
+        
+        <!-- Game Board -->
+        <div id="game-board" class="grid grid-rows-6 gap-1.5 my-4 sm:my-6 items-center justify-center"></div>
+
+        <!-- Alphabet Health Bar -->
+        <div class="mb-4 px-2">
+            <h3 class="text-center text-sm font-semibold text-white/70 tracking-wider mb-2">AVAILABLE LETTERS</h3>
+            <div id="alphabet-display" class="grid grid-cols-13 gap-1 text-xs sm:text-sm justify-center bg-black/20 p-2 rounded-lg"></div>
+        </div>
+
+        <!-- Keyboard -->
+        <div id="keyboard" class="flex flex-col items-center gap-2 mt-4"></div>
+    </div>
+    
+    <!-- Message Popup -->
+    <div id="message-container" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg text-lg font-semibold transition-all opacity-0 -translate-y-10 z-40">
+        <p id="message-text"></p>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center hidden z-50">
+        <div class="bg-gradient-to-br from-gray-800 to-gray-900 p-8 rounded-2xl shadow-2xl text-center max-w-sm w-full border border-white/20">
+            <h2 id="game-over-title" class="text-3xl font-bold mb-2">Game Over!</h2>
+            <p class="text-lg mb-4 text-white/80">The word was: <strong id="correct-word" class="text-violet-400"></strong></p>
+            <button id="restart-button-modal" class="bg-violet-500 hover:bg-violet-600 text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-105">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const FALLBACK_WORD_LIST = ["APPLE", "BEACH", "BRAIN", "BREAD", "CHAIR", "CLOCK", "CLOUD", "DANCE", "DREAM", "EARTH", "FRUIT", "GHOST", "GREEN", "HEART", "HOUSE", "LIGHT", "MONEY", "MUSIC", "NIGHT", "OCEAN", "PAPER", "PARTY", "PHONE", "PIZZA", "PLANT", "QUIET", "RIVER", "ROBOT", "SMILE", "SOUND", "SPACE", "STORM", "TABLE", "TIGER", "TRAIN", "WATER", "WHITE", "WORLD", "WRITE"];
+
+        // DOM Elements
+        const startScreen = document.getElementById('start-screen');
+        const startButton = document.getElementById('start-button');
+        const gameContainer = document.getElementById('game-container');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+        const gameBoard = document.getElementById('game-board');
+        const keyboardContainer = document.getElementById('keyboard');
+        const alphabetDisplay = document.getElementById('alphabet-display');
+        const messageContainer = document.getElementById('message-container');
+        const messageText = document.getElementById('message-text');
+        const gameOverModal = document.getElementById('game-over-modal');
+        const gameOverTitle = document.getElementById('game-over-title');
+        const correctWordEl = document.getElementById('correct-word');
+        const restartButtonMain = document.getElementById('restart-button-main');
+        const restartButtonModal = document.getElementById('restart-button-modal');
+
+        // Game State
+        let apiKey = 'AIzaSyAH8bYyBuHiteeyWXSvdeQQeolis6IDwjQ';
+        let secretWord = '';
+        let currentRow = 0;
+        let currentCol = 0;
+        let guesses = Array(6).fill(null).map(() => Array(5).fill(''));
+        let isGameOver = false;
+        let isChecking = false;
+        let keyColors = {};
+        let availableLetters = {};
+
+        // --- Gemini API Call ---
+        async function callGemini(prompt, retries = 5, delay = 1000) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+            
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+
+                    // If the response status indicates a server error or rate limiting, throw to trigger a retry
+                    if (response.status === 503 || response.status === 429) {
+                        throw new Error(`API Error: ${response.status} - Model is overloaded or rate limited.`);
+                    }
+
+                    if (!response.ok) {
+                        const errorBody = await response.json();
+                        throw new Error(`API Error: ${response.status} - ${errorBody.error.message}`);
+                    }
+
+                    const data = await response.json();
+                    if (data.candidates && data.candidates.length > 0 && data.candidates[0].content.parts[0].text) {
+                        return data.candidates[0].content.parts[0].text; // Success, exit the loop
+                    } else {
+                        if (data.promptFeedback && data.promptFeedback.blockReason) {
+                            throw new Error(`Request blocked by API: ${data.promptFeedback.blockReason}`);
+                        }
+                        throw new Error("Invalid response structure from API.");
+                    }
+                } catch (error) {
+                    console.error(`API call attempt ${i + 1} failed:`, error.message);
+                    if (i === retries - 1) { // If it's the last retry, show the error to the user
+                        showMessage(error.message, "error");
+                        throw error;
+                    }
+                    // Wait before retrying with exponential backoff
+                    const backoffTime = delay * Math.pow(2, i);
+                    console.log(`Retrying in ${backoffTime}ms...`);
+                    await new Promise(res => setTimeout(res, backoffTime));
+                }
+            }
+        }
+
+        async function getWordFromGemini() {
+            try {
+                const prompt = "Give me one common, 5-letter English word for a word-guessing game. Respond with only the word in uppercase.";
+                const word = await callGemini(prompt);
+                const cleanedWord = word.trim().toUpperCase().replace(/[^A-Z]/g, '');
+                if (cleanedWord.length === 5) return cleanedWord;
+                throw new Error("AI returned an invalid word.");
+            } catch (error) {
+                console.error("Failed to get word from AI, using fallback:", error);
+                showMessage("AI failed, using fallback word", "error");
+                return FALLBACK_WORD_LIST[Math.floor(Math.random() * FALLBACK_WORD_LIST.length)];
+            }
+        }
+
+        async function validateWordWithGemini(word) {
+            try {
+                const prompt = `Is "${word}" a valid English word? Respond with only "yes" or "no".`;
+                const response = await callGemini(prompt);
+                return response.trim().toLowerCase().includes('yes');
+            } catch (error) {
+                console.error("Word validation with AI failed, allowing word:", error);
+                showMessage("AI validation failed, allowing word.", "error");
+                return true;
+            }
+        }
+
+        // --- Game Initialization ---
+        function resetAlphabet() {
+            availableLetters = {};
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('').forEach(letter => {
+                availableLetters[letter] = 3;
+            });
+        }
+
+        async function initGame() {
+            showLoader("Starting New Game...");
+            isGameOver = false;
+            currentRow = 0;
+            currentCol = 0;
+            keyColors = {};
+            guesses = Array(6).fill(null).map(() => Array(5).fill(''));
+            resetAlphabet();
+
+            createBoard();
+            createKeyboard();
+            createAlphabetDisplay();
+            
+            gameOverModal.classList.add('hidden');
+            
+            showLoader("AI is picking a word...");
+            secretWord = await getWordFromGemini();
+            console.log("Secret Word:", secretWord);
+            updateBoard();
+            hideLoader();
+        }
+
+        // --- UI Creation ---
+        function createBoard() {
+            gameBoard.innerHTML = '';
+            for (let i = 0; i < 6; i++) {
+                const rowEl = document.createElement('div');
+                rowEl.className = 'grid grid-cols-5 gap-1.5';
+                for (let j = 0; j < 5; j++) {
+                    const tileContainer = document.createElement('div');
+                    tileContainer.className = 'tile relative';
+                    const tileFront = document.createElement('div');
+                    tileFront.className = 'tile-front';
+                    const tileBack = document.createElement('div');
+                    tileBack.className = 'tile-back';
+                    tileContainer.appendChild(tileFront);
+                    tileContainer.appendChild(tileBack);
+                    rowEl.appendChild(tileContainer);
+                }
+                gameBoard.appendChild(rowEl);
+            }
+        }
+
+        function createKeyboard() {
+            keyboardContainer.innerHTML = '';
+            const keysLayout = ["QWERTYUIOP", "ASDFGHJKL", "ENTER-ZXCVBNM-BACK"];
+            keysLayout.forEach(row => {
+                const rowEl = document.createElement('div');
+                rowEl.className = 'flex gap-1.5 justify-center';
+                row.split('-').forEach(segment => {
+                    if (segment === 'ENTER') {
+                        const keyEl = document.createElement('button');
+                        keyEl.className = 'key h-14 px-4 flex-grow bg-white/30';
+                        keyEl.textContent = 'Enter';
+                        keyEl.dataset.key = 'Enter';
+                        rowEl.appendChild(keyEl);
+                    } else if (segment === 'BACK') {
+                        const keyEl = document.createElement('button');
+                        keyEl.className = 'key h-14 px-4 flex-grow bg-white/30';
+                        keyEl.textContent = '⌫';
+                        keyEl.dataset.key = 'Backspace';
+                        rowEl.appendChild(keyEl);
+                    } else {
+                        segment.split('').forEach(key => {
+                            const keyEl = document.createElement('button');
+                            keyEl.className = 'key h-14 w-9 md:w-11 flex items-center justify-center';
+                            keyEl.textContent = key;
+                            keyEl.dataset.key = key;
+                            rowEl.appendChild(keyEl);
+                        });
+                    }
+                });
+                keyboardContainer.appendChild(rowEl);
+            });
+        }
+        
+        function createAlphabetDisplay() {
+            alphabetDisplay.innerHTML = '';
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('').forEach(letter => {
+                if (letter === 'N') {
+                    alphabetDisplay.innerHTML += `<div class="col-span-13"></div>`;
+                }
+                const letterEl = document.createElement('div');
+                letterEl.className = 'alphabet-letter font-bold text-center';
+                letterEl.dataset.letter = letter;
+                
+                const letterSpan = document.createElement('span');
+                letterSpan.textContent = letter;
+                
+                const countSup = document.createElement('sup');
+                countSup.textContent = availableLetters[letter];
+                
+                letterEl.appendChild(letterSpan);
+                letterEl.appendChild(countSup);
+                alphabetDisplay.appendChild(letterEl);
+            });
+        }
+
+        // --- Game Logic ---
+        function handleKeyPress(key) {
+            if (isGameOver || isChecking) return;
+            if (key === 'Enter') submitGuess();
+            else if (key === 'Backspace') deleteLetter();
+            else if (key.length === 1 && key.match(/[a-z]/i)) addLetter(key.toUpperCase());
+        }
+
+        function addLetter(letter) {
+            if (currentCol >= 5) return;
+            if (availableLetters[letter] < 1) {
+                showMessage(`Letter '${letter}' is not available`, "error");
+                return;
+            }
+            guesses[currentRow][currentCol] = letter;
+            availableLetters[letter]--;
+            currentCol++;
+            updateBoard();
+            updateUIAfterLetterChange();
+        }
+
+        function deleteLetter() {
+            if (currentCol > 0) {
+                currentCol--;
+                const letter = guesses[currentRow][currentCol];
+                if(letter) availableLetters[letter]++;
+                guesses[currentRow][currentCol] = '';
+                updateBoard();
+                updateUIAfterLetterChange();
+            }
+        }
+
+        async function submitGuess() {
+            if (currentCol < 5) {
+                showMessage("Not enough letters", "error");
+                return;
+            }
+            isChecking = true;
+            showLoader("AI is checking your word...");
+            const guess = guesses[currentRow].join('');
+            const isValid = await validateWordWithGemini(guess);
+            hideLoader();
+            if (!isValid) {
+                showMessage("Not a valid word", "error");
+                isChecking = false;
+                const rowEl = gameBoard.children[currentRow];
+                if (rowEl) {
+                    rowEl.classList.add('animate-shake');
+                    setTimeout(() => rowEl.classList.remove('animate-shake'), 500);
+                }
+                return;
+            }
+            revealGuess(guess);
+        }
+
+        // --- REVEAL LOGIC ---
+        function revealGuess(guess) {
+            const secretFreq = {};
+            for (const letter of secretWord) {
+                secretFreq[letter] = (secretFreq[letter] || 0) + 1;
+            }
+
+            const results = Array(5).fill('gray'); // Default to gray
+
+            // Pass 1: Find GREEN letters (perfect match)
+            for (let i = 0; i < 5; i++) {
+                if (guess[i] === secretWord[i]) {
+                    results[i] = 'green';
+                    secretFreq[guess[i]]--;
+                }
+            }
+
+            // Pass 2: Find YELLOW letters (correct letter, wrong spot)
+            for (let i = 0; i < 5; i++) {
+                // Skip if it's already green
+                if (results[i] === 'green') continue;
+
+                // Check if the letter exists and has remaining uses in the secret word
+                if (secretFreq[guess[i]] > 0) {
+                    results[i] = 'yellow';
+                    secretFreq[guess[i]]--;
+                }
+            }
+            
+            const rowEl = gameBoard.children[currentRow];
+            if (!rowEl) return;
+            const tiles = rowEl.querySelectorAll('.tile');
+
+            results.forEach((result, i) => {
+                const colorMap = {
+                    green: 'bg-emerald-500',
+                    yellow: 'bg-amber-500',
+                    gray: 'bg-gray-600'
+                };
+                updateTile(tiles[i], guess[i], colorMap[result], i);
+                updateKeyColor(guess[i], colorMap[result]);
+            });
+
+            if (guess === secretWord) {
+                setTimeout(() => handleEnd(true), 1800);
+            } else if (currentRow === 5) {
+                setTimeout(() => handleEnd(false), 1800);
+            } else {
+                currentRow++;
+                currentCol = 0;
+                isChecking = false;
+            }
+        }
+        
+        function handleEnd(isWin) {
+            isGameOver = true;
+            correctWordEl.textContent = secretWord;
+            gameOverTitle.textContent = isWin ? "You Won!" : "Game Over";
+            gameOverModal.classList.remove('hidden');
+        }
+
+        // --- UI Updates ---
+        function updateBoard() {
+            for (let i = 0; i < 6; i++) {
+                const rowEl = gameBoard.children[i];
+                if (!rowEl) continue;
+                const tiles = rowEl.querySelectorAll('.tile .tile-front');
+                for (let j = 0; j < 5; j++) {
+                    if (tiles[j]) {
+                        tiles[j].textContent = guesses[i][j];
+                        const tileContainer = tiles[j].parentElement;
+                        if (i === currentRow && j === currentCol - 1 && guesses[i][j] !== '') {
+                            tileContainer.style.transform = 'scale(1.1)';
+                            setTimeout(() => { tileContainer.style.transform = 'scale(1)'; }, 100);
+                        }
+                    }
+                }
+            }
+        }
+        
+        function updateTile(tile, letter, colorClass, index) {
+            const tileFront = tile.querySelector('.tile-front');
+            const tileBack = tile.querySelector('.tile-back');
+            tileFront.textContent = letter;
+            tileBack.textContent = letter;
+            setTimeout(() => {
+                tile.classList.add('flip');
+                tileBack.className = 'tile-back border-none ' + colorClass;
+            }, index * 250);
+        }
+        
+        function updateKeyColor(key, colorClass) {
+            const priority = {'bg-gray-600': 1, 'bg-amber-500': 2, 'bg-emerald-500': 3};
+            if (!keyColors[key] || priority[colorClass] > priority[keyColors[key]]) {
+                keyColors[key] = colorClass;
+                updateUIAfterLetterChange();
+            }
+        }
+
+        function updateUIAfterLetterChange() {
+             keyboardContainer.querySelectorAll('.key').forEach(keyEl => {
+                 const key = keyEl.dataset.key;
+                 if (key.length === 1) {
+                     const color = keyColors[key];
+                     keyEl.classList.remove('bg-white/20', 'bg-gray-600', 'bg-amber-500', 'bg-emerald-500');
+                     keyEl.classList.add(color || 'bg-white/20');
+                     keyEl.disabled = availableLetters[key] < 1;
+                 }
+             });
+             alphabetDisplay.querySelectorAll('.alphabet-letter').forEach(letterEl => {
+                 const letter = letterEl.dataset.letter;
+                 const count = availableLetters[letter];
+                 letterEl.querySelector('sup').textContent = count;
+                 if (count < 1) {
+                    letterEl.classList.add('used-all');
+                 } else {
+                    letterEl.classList.remove('used-all');
+                 }
+             });
+        }
+        
+        function showMessage(msg, type = "info") {
+            messageText.textContent = msg;
+            messageContainer.classList.remove('bg-emerald-500', 'bg-red-500', 'bg-blue-500', 'opacity-0', '-translate-y-10');
+            const colorClass = type === 'success' ? 'bg-emerald-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+            messageContainer.classList.add(colorClass, 'opacity-100', 'translate-y-0');
+            setTimeout(() => {
+                messageContainer.classList.remove('opacity-100', 'translate-y-0');
+                messageContainer.classList.add('opacity-0', '-translate-y-10');
+            }, 3000);
+        }
+
+        function showLoader(text) {
+            loadingText.textContent = text;
+            loadingOverlay.classList.remove('hidden');
+            loadingOverlay.classList.add('flex');
+        }
+
+        function hideLoader() {
+            loadingOverlay.classList.add('hidden');
+            loadingOverlay.classList.remove('flex');
+        }
+
+        // --- Event Listeners ---
+        function fullGameRestart() {
+            gameContainer.classList.add('hidden');
+            gameContainer.classList.remove('flex');
+            startScreen.classList.remove('hidden');
+        }
+        
+        startButton.addEventListener('click', () => {
+            startScreen.classList.add('hidden');
+            gameContainer.classList.remove('hidden');
+            gameContainer.classList.add('flex');
+            initGame();
+        });
+
+        restartButtonMain.addEventListener('click', fullGameRestart);
+        restartButtonModal.addEventListener('click', fullGameRestart);
+
+        document.addEventListener('keydown', (e) => handleKeyPress(e.key));
+        keyboardContainer.addEventListener('click', (e) => {
+            if (e.target.matches('.key')) handleKeyPress(e.target.dataset.key);
+        });
+
+        // Add a shake animation to Tailwind config
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+                20%, 40%, 60%, 80% { transform: translateX(5px); }
+            }
+            .animate-shake { animation: shake 0.5s ease-in-out; }
+            .grid-cols-13 { grid-template-columns: repeat(13, minmax(0, 1fr)); }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
